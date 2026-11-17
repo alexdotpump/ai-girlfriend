@@ -8,6 +8,7 @@ from ...logging_setup import get_logger
 from ..base import NullVoiceProvider, VoiceProvider
 from .edge import EdgeTTSProvider
 from .elevenlabs import ElevenLabsProvider
+from .groq_tts import GroqTTSProvider
 from .openai_tts import OpenAITTSProvider
 
 log = get_logger("leyla.voice.registry")
@@ -29,6 +30,13 @@ def build_voice_provider(settings: Settings) -> VoiceProvider:
                 similarity_boost=settings.elevenlabs_similarity,
                 style=settings.elevenlabs_style,
                 speaker_boost=settings.elevenlabs_speaker_boost,
+            )
+        if settings.voice_provider == "groq":
+            return GroqTTSProvider(
+                settings.groq_api_key,
+                model=settings.groq_tts_model,
+                voice=settings.groq_tts_voice,
+                base_url=settings.groq_tts_url,
             )
         if settings.voice_provider == "openai":
             return OpenAITTSProvider(

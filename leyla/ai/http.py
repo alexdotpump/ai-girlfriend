@@ -133,8 +133,9 @@ class HttpJsonClient:
                 log.warning("%s network error (%s), retrying in %.1fs", self.provider, exc, delay)
                 await asyncio.sleep(delay)
 
+        detail = str(last_error) or type(last_error).__name__ if last_error else "unknown error"
         raise ProviderError(
-            f"{self.provider} request failed: {last_error}",
+            f"{self.provider} request failed: {detail}",
             provider=self.provider,
             retryable=True,
         )

@@ -101,6 +101,8 @@ class VoiceService:
             frequency=self.settings.voice_frequency if frequency is None else frequency,
             energy=energy,
             supports_tags=self.provider.supports_audio_tags,
+            tag_style=self.provider.tag_style,
+            max_chars=self.provider.max_input_chars or None,
         )
         if not plan.should_send:
             return VoiceResult(False, reason=plan.reason)
@@ -186,7 +188,10 @@ class VoiceService:
 
     # ------------------------------------------------------------- internals
     async def _synthesize_cached(self, plan: VoicePlan) -> SpeechAudio:
-        key_text = f"{self.provider.name}|{self.settings.elevenlabs_model}|{plan.text}"
+        model = getattr(self.provider, "model", "") or getattr(
+            self.settings, f"{self.settings.voice_provider}_tts_model", ""
+        )
+        key_text = f"{self.provider.name}|{model}|{plan.text}"
         digest = hashlib.sha256(key_text.encode("utf-8")).hexdigest()[:32]
         cached = self._load_cache(digest)
         if cached is not None:

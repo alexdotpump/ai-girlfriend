@@ -99,8 +99,9 @@ def test_primary_key_is_not_shared_with_fallbacks():
         }
     )
     assert settings.ai_key_for("gemini") == "generic-gemini-key"
-    # A generic key must never be sent to a different vendor.
-    assert settings.ai_key_for("groq") == ""
+    # A generic key must never be sent to a different vendor (pass an explicit
+    # env so a GROQ_API_KEY in the developer's shell cannot mask the check).
+    assert settings.ai_key_for("groq", env={}) == ""
 
 
 def test_discord_ids_parse_from_env_sets():

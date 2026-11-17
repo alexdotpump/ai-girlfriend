@@ -5,10 +5,10 @@ nonverbal cues (if any) belong in it. Kept separate from synthesis so the
 decision logic is unit-testable without touching an API.
 
 Deliberate design choices:
-* one synthesis request per note — stitching pre-recorded laughs onto TTS
+* one synthesis request per note — stitching pre-recorded laughter onto TTS
   fragments is exactly what makes hybrid voices sound assembled;
 * at most two tags, drawn from mood-appropriate whitelists, with per-tag
-  cooldowns so she does not giggle every single note;
+  cooldowns so she does not laugh every single note;
 * cheap heuristics instead of an extra LLM call.
 """
 
@@ -39,6 +39,19 @@ SUPPORTED_TAGS = {
     "[sarcastic]",
     "[snorts]",
     "[nervous laugh]",
+}
+
+#: Orpheus renders its nonverbal cues as angle-bracket tokens. Cues it has no
+#: token for are dropped rather than spoken, and duplicates collapse (``<laugh>``
+#: twice in one note is a soundboard, not a person).
+ORPHEUS_TAGS = {
+    "[laughs]": "<laugh>",
+    "[laughs harder]": "<laugh>",
+    "[starts laughing]": "<laugh>",
+    "[snorts]": "<laugh>",
+    "[nervous laugh]": "<chuckle>",
+    "[sighs]": "<sigh>",
+    "[exhales]": "<sigh>",
 }
 
 #: How long each nonverbal cue is rested after use (seconds).
@@ -144,6 +157,8 @@ class VoiceDirector:
         frequency: float = 0.2,
         energy: str = "medium",
         supports_tags: bool = True,
+        tag_style: str = "elevenlabs",
+        max_chars: int | None = None,
     ) -> VoicePlan:
         """Decide whether (and how) this reply becomes a voice note.
 
@@ -153,12 +168,13 @@ class VoiceDirector:
         if mode == "off":
             return VoicePlan(False, reason="voice mode is off")
 
-        spoken = clean_for_speech(reply, max_chars=self.max_chars)
+        limit = max_chars or self.max_chars
+        spoken = clean_for_speech(reply, max_chars=limit)
         if not spoken:
             return VoicePlan(False, reason="nothing speakable in this reply (links/code only)")
         if len(spoken) < 12:
             return VoicePlan(False, reason="reply too short to be worth speaking")
-        if len(reply) > self.max_chars * 1.8:
+        if len(reply) > limit * 1.8:
             return VoicePlan(False, reason="reply too long for a voice note")
 
         explicit = request == "explicit"
@@ -176,7 +192,16 @@ class VoiceDirector:
         if supports_tags and self.nonverbal_enabled:
             tags = await self._choose_tags(scope_id, mood, spoken, energy)
 
-        text = compose_spoken_text(spoken, tags)
+        text = compose_spoken_text(spoken, tags, style=tag_style)
+        if len(text) > limit:
+            # Reserve room for the cues instead of losing them to the trimmer.
+            rendered = [render_tag(tag, tag_style) for tag in tags]
+            overhead = sum(len(tag) + 1 for tag in rendered if tag)
+            body = clean_for_speech(spoken, max_chars=max(40, limit - overhead))
+            text = compose_spoken_text(body, tags, style=tag_style)
+            if len(text) > limit:
+                tags = ()
+                text = clean_for_speech(spoken, max_chars=limit)
         return VoicePlan(
             should_send=True,
             text=text,
@@ -271,13 +296,30 @@ def clean_for_speech(text: str, *, max_chars: int = 700) -> str:
     return cleaned
 
 
-def compose_spoken_text(spoken: str, tags: tuple[str, ...]) -> str:
+def render_tag(tag: str, style: str = "elevenlabs") -> str:
+    """Translate a canonical cue into this engine's spelling."""
+    if style == "orpheus":
+        return ORPHEUS_TAGS.get(tag, "")
+    return tag
+
+
+def compose_spoken_text(
+    spoken: str, tags: tuple[str, ...], *, style: str = "elevenlabs"
+) -> str:
     """Place cues where they sound natural: reactions lead, breaths mid-sentence."""
     if not tags:
         return spoken
 
-    opening = [tag for tag in tags if tag in _LEAD_TAGS]
-    mid = [tag for tag in tags if tag in _MID_TAGS]
+    opening = [
+        rendered
+        for rendered in (render_tag(tag, style) for tag in tags if tag in _LEAD_TAGS)
+        if rendered
+    ]
+    mid = [
+        rendered
+        for rendered in (render_tag(tag, style) for tag in tags if tag in _MID_TAGS)
+        if rendered and rendered not in opening
+    ]
 
     text = spoken
     if opening:

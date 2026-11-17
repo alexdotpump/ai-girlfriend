@@ -45,14 +45,16 @@ DISCORD_TOKEN=...
 OWNER_DISCORD_ID=...
 DISCORD_GUILD_ID=...          # optional, instant command sync
 GEMINI_API_KEY=...            # free: https://aistudio.google.com/apikey
-ELEVENLABS_API_KEY=...        # free plan works
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+AI_MODEL=gemini-flash-latest
+AI_MODEL_FALLBACKS=gemini-3.5-flash,gemini-flash-lite-latest
+GROQ_API_KEY=...             # voice: https://console.groq.com/keys
+GROQ_TTS_VOICE=autumn
 VOICE_MODE=occasional
 ```
 
 Every other variable has a default; see [.env.example](../.env.example). If you
 only want text chat at first, set `VOICE_MODE=off` — it also removes the required
-ElevenLabs key from startup validation.
+Groq key from startup validation.
 
 ## 4. ffmpeg (needed for real voice notes)
 
@@ -108,9 +110,10 @@ ffmpeg -version
 | Bot ignores messages in a server | She only answers DMs, mentions, or whitelisted channels. `/setup channel add`. |
 | No replies to anyone | Check `OWNER_DISCORD_ID` — non-owners are ignored silently by design. |
 | Voice: `ffmpeg is required…` | Install/point `FFMPEG_PATH`, or accept the MP3 attachment fallback. |
-| Voice: `synthesis failed: … 401` | Bad/expired `ELEVENLABS_API_KEY`, or the model is unavailable on your plan (falls back automatically; check logs). |
+| Voice: `synthesis failed: … 401` | Bad/expired `GROQ_API_KEY` (or `ELEVENLABS_API_KEY` if you switched providers). |
+| Voice: `Groq TTS failed: … 429` | Groq rate limit. Lower `VOICE_FREQUENCY`, raise `VOICE_COOLDOWN_MINUTES`; text replies still work. |
 | Voice: `daily TTS budget` | Character budget reached. Raise `TTS_DAILY_CHAR_LIMIT` only if your plan allows. |
-| AI: `all AI providers failed` | Bad key, exhausted free quota, or model ID retired. Check `/status` and the logs; free model names change. |
+| AI: `all AI providers failed` | Bad key, exhausted free quota, or model ID retired. Check `/status` and the logs; free model names change. `gemini-flash-latest` answering 503 "high demand" is the common case — keep `AI_MODEL_FALLBACKS` set. |
 | `database is locked` | Another process opened the DB. Run one instance only. |
 | Server killed / OOM | Free plan is 308 MB. Keep `data/images` small, don't add heavy packages; measured usage is ~50 MB. |
 | Commands respond "this one is private." | `OWNER_DISCORD_ID` does not match your account. |

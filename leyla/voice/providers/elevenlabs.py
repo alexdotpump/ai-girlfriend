@@ -26,6 +26,7 @@ API_BASE = "https://api.elevenlabs.io/v1"
 class ElevenLabsProvider(VoiceProvider):
     name = "elevenlabs"
     supports_audio_tags = True
+    tag_style = "elevenlabs"
 
     def __init__(
         self,

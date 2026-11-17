@@ -21,15 +21,17 @@ ID, and nothing responds to anyone else.
 | SQLite memory (short + long term) | Implemented · tested | Dedupe, supersede, ranked retrieval, per-item delete, full clear, survives restarts |
 | Mood engine (11 moods) | Implemented · tested | Hysteresis, dwell time, decay to baseline, persistence, text-tone inference |
 | Voice notes in Discord | Implemented · tested (protocol + audio) | Ogg/Opus encode, duration, waveform, REST voice-message upload |
-| Expressive voice (audio tags) | Implemented · needs credentials to audition | ElevenLabs v3/v4 `[laughs]`, `[sighs]`, `[exhales]`; verified to be the only mainstream API that does this |
-| Voice provider fallbacks | Implemented · one tested live | `edge-tts` (free, no key) produced real speech in this build; OpenAI TTS optional |
+| Expressive voice | Implemented · **tested live on Discord** | Groq Orpheus `canopylabs/orpheus-v1-english`, voice `autumn`; `<laugh>`, `<chuckle>`, `<sigh>` render as real nonverbal sounds (never read aloud) |
+| Voice provider fallbacks | Implemented · one tested live | `edge-tts` (free, no key) produced real speech in this build; ElevenLabs, OpenAI TTS optional |
 | Character images | Implemented · tested | 12 mood-matched portraits with one visual identity; optional generation off by default |
 | Cost controls | Implemented · tested | Daily/monthly character + request budgets, cooldowns, caching, bounded context |
 | KataBump deployment | Documented · verified against published limits | Entry point, `.env`, SQLite, ffmpeg requirement, 4-day renewal |
 
-**Not claimed:** a live Discord login, a live ElevenLabs render, or a live Gemini
-call happened in this build — those need your credentials. See
-[Verification](#verification) for exactly what was run.
+**Live-verified on 17 November 2026:** gateway login as `Leyla#3471`, a real Gemini
+turn, memory extraction, and a real Discord voice message (9.4 s, waveform, flag
+8192) posted in the owner's server. One thing is still blocked by the bot's invite:
+slash-command sync returns `403 Missing Access` until the bot is re-invited with
+the `applications.commands` scope. See [Verification](#verification).
 
 ---
 
@@ -40,7 +42,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# fill in DISCORD_TOKEN, OWNER_DISCORD_ID, GEMINI_API_KEY (free), ELEVENLABS_API_KEY
+# fill in DISCORD_TOKEN, OWNER_DISCORD_ID, GEMINI_API_KEY (free), GROQ_API_KEY (voice)
 
 python main.py
 ```
@@ -115,13 +117,13 @@ leyla/
   memory/                   store.py (long-term) · context.py (short-term) · extractor.py
   voice/
     director.py             decide *whether*, *what*, *which cues*
-    providers/              elevenlabs.py · openai_tts.py · edge.py · registry.py
+    providers/              groq_tts.py · elevenlabs.py · openai_tts.py · edge.py · registry.py
     audio.py                ffmpeg → Ogg/Opus, duration, waveform
     sender.py               Discord voice-message REST upload
     service.py              budgets, caching, delivery + fallback
   images/                   assets.py (identity) · providers.py · service.py
   cogs/                     chat.py · commands.py
-tests/                      125 tests (see below)
+tests/                      138 tests (see below)
 docs/                       deployment · costs · voice · architecture
 assets/character/           12 consistent portraits (replaceable)
 scripts/make_character_assets.py
@@ -151,7 +153,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-**125 tests pass** (Python 3.12 in this build; all sources are also parsed as
+**138 tests pass** (Python 3.12 in this build; all sources are also parsed as
 Python 3.10 to match KataBump).
 
 What the tests actually exercise:
@@ -185,10 +187,21 @@ Also verified manually in this build:
 - process footprint with all services initialised: **~50 MB RSS**
 - `main.py` refuses to start with missing credentials, no traceback leaked
 
-**Not verified (needs your credentials):** actual Discord gateway login, actual
-Discord voice-message playback, Gemini/Groq reply quality, ElevenLabs naturalness
-and tag rendering, Discord command sync on your server. Do a `/voice test` after
-deploying — that is the one-minute check that proves voice end-to-end.
+Live checks run on 17 November 2026 against the real services:
+
+- **Discord gateway login** as `Leyla#3471` (id `1571911547515699210`) in 1 guild;
+owner gating verified (`is_owner(you) → True`, stranger → `False`)
+- **Gemini turn** through the full engine: in-character reply, mood moved to
+  playful, envelope parsed, memory `Alex signed up for a pottery class` stored
+- **Groq Orpheus note**: `<laugh> …` → 9.2–9.4 s, 61.7 KB Ogg/Opus, waveform,
+  `flags: 8192`, `audio/ogg` — delivered as a real Discord voice message
+  (`/voice test` uses the same path)
+- **Occasional voice** fired on its own during that turn (`mode=occasional`,
+  mood=playful) — so the "now and then" policy works in practice
+
+Not verified: subjective voice quality (I cannot hear the audio — you have to),
+and slash-command sync, which is blocked by the bot's invite scope (`403 Missing
+Access`). Re-invite with `applications.commands` and restart to fix that.
 
 ---
 
@@ -197,13 +210,14 @@ deploying — that is the one-minute check that proves voice end-to-end.
 Starter configuration is **€0/month** within free tiers:
 
 - **Gemini free tier** — no card, free Flash models (`gemini-flash-latest`).
-- **ElevenLabs free plan** — 10k credits/month (≈10k characters). Leyla ships with a
-  monthly budget of 8,500 characters, roughly one 300-character note per day.
+- **Groq Orpheus TTS** — $22 per million characters, i.e. about **$0.004 for a
+  190-character note**. A handful of notes a day is cents per month; the character
+  budget stops it from ever surprising you.
 - **KataBump free plan** — 308 MB RAM / 716 MB disk, renewed every 4 days.
 - Discord, SQLite, `edge-tts`, Pollinations — free.
 
-Paid only if you choose it: ElevenLabs Starter ($6/mo, 30k credits, commercial
-licence), OpenAI TTS/images, extra hosting. Full table with verified limits:
+Optional paid paths: ElevenLabs Starter ($6/mo, 30k credits, commercial licence),
+OpenAI TTS/images, extra hosting. Full table with verified limits:
 [docs/COSTS_AND_KEYS.md](docs/COSTS_AND_KEYS.md).
 
 ---
@@ -226,10 +240,15 @@ deleted.
   multi-instance. Back up `data/leyla.sqlite3` via SFTP.
 - **ffmpeg is a host dependency.** Voice notes need it for Ogg/Opus. Without it
   audio is sent as an MP3 attachment instead (playable, but not a voice note).
-- **ElevenLabs free plan is non-commercial** and requires attribution if you
-  publish the audio. Fine for private use; upgrade for a commercial licence.
-- **Audio tags are probabilistic.** v3/v4 usually follow `[laughs]`/`[sighs]`, but
-  not with 100% reliability; tags are limited to two per note and rate-limited.
+- **Orpheus accepts 200 characters per request.** Voice notes are therefore short
+  (~190 characters by default) and nothing is stitched together to fake a longer
+  one.
+- **Free Gemini models are busy.** `gemini-flash-latest` sometimes answers 503
+  "high demand"; Leyla then tries `AI_MODEL_FALLBACKS` (Gemini 3.5 Flash, then
+  Flash-Lite) so the conversation still answers. That failover can take up to a
+  minute at peak times.
+- **Nonverbal cues are probabilistic.** `<laugh>`/`<sigh>` usually render, not
+  always; they are capped at two per note with cooldowns measured in minutes.
 - **Free-tier budgets stop features, they do not bill you.** When a budget is hit,
   Leyla says so instead of silently spending.
 - **Memory retrieval is lexical.** Very paraphrased queries may miss a fact; use

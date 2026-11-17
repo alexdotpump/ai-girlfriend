@@ -10,7 +10,7 @@ rate-limit trackers. Free tiers change without notice — re-check before relyin
 | --- | --- | --- | --- | --- |
 | Discord | Bot platform | Yes | — | `DISCORD_TOKEN` |
 | Google Gemini API | Conversation brain | Yes, no card | Free of charge for Flash / Flash-Lite models; per-project limits are shown in AI Studio and reset daily (not published, not guaranteed) | `GEMINI_API_KEY` |
-| ElevenLabs | Expressive voice notes | Yes (10k credits/mo) | ≈10,000 characters/month; **no commercial licence**; attribution required if published | `ELEVENLABS_API_KEY` |
+| Groq Orpheus TTS | Expressive voice notes | Paid per use | $22 per 1M characters ≈ **$0.004 per 190-character note**; preview model, limits can change | `GROQ_API_KEY` |
 | KataBump | Hosting | Yes | 308 MB RAM · 716 MB disk · 25% CPU · renewal every 4 days | — |
 | SQLite / ffmpeg / edge-tts / Pollinations | Storage and fallbacks | Yes | SQLite local; `edge-tts` free and keyless; Pollinations keyless and rate-limited | — |
 
@@ -34,7 +34,8 @@ silently overspend.
 
 | Provider | Free? | Expression support | Recommendation |
 | --- | --- | --- | --- |
-| **ElevenLabs v4 / v3** | 10k credits/mo free | **Audio tags**: `[laughs]`, `[laughs harder]`, `[starts laughing]`, `[sighs]`, `[exhales]`, `[clears throat]`, `[whispers]`, `[excited]`, `[curious]`, `[sarcastic]`, `[mischievously]`, `[nervous laugh]`, `[snorts]` | Default. Only verified option that renders laughter/breaths *inside the take*. |
+| **Groq Orpheus** (`canopylabs/orpheus-v1-english`) | No, $22/1M chars | Nonverbal tokens `<laugh>`, `<chuckle>`, `<sigh>` (plus bracketed directions) | **Default.** Verified live: tokens are performed, never read aloud. |
+| **ElevenLabs v4 / v3** | 10k credits/mo free | **Audio tags**: `[laughs]`, `[laughs harder]`, `[starts laughing]`, `[sighs]`, `[exhales]`, `[clears throat]`, `[whispers]`, `[excited]`, `[curious]`, `[sarcastic]`, `[mischievously]`, `[nervous laugh]`, `[snorts]` | Optional alternative (`VOICE_PROVIDER=elevenlabs`); free plan is non-commercial. |
 | ElevenLabs Starter | $6/mo (first month $1) | Same + commercial licence | 30k credits/month; get this if you publish audio. |
 | **OpenAI TTS** (`gpt-4o-mini-tts`) | No | Delivery via natural-language `instructions` only, no laughter/breaths | Good cheaper alternative; less expressive. |
 | **edge-tts** | Yes, keyless | Prosody/punctuation only | Zero-cost fallback; noticeably more "TTS". |
@@ -48,9 +49,9 @@ Assumptions: ~100 messages/day, ~60% of replies short.
 | Scenario | Monthly |
 | --- | --- |
 | Gemini free + voice off + KataBump free | **€0** |
-| Gemini free + ElevenLabs free (1 short note/day) | **€0** (within 10k characters) |
+| Gemini free + Groq Orpheus (a few 190-char notes a day) | **< $1** |
+| Gemini free + ElevenLabs free | **€0** (within 10k characters/month) |
 | Gemini free + ElevenLabs Starter (2–3 notes/day) | **$6** |
-| Groq free (1,000 req/day) + ElevenLabs Starter | **$6** |
 | OpenAI brain + OpenAI TTS, 100 msgs/day | a few dollars; depends on model and note length |
 
 Cost controls already in the code:
@@ -72,21 +73,24 @@ Cost controls already in the code:
 | `DISCORD_TOKEN` | Discord Developer Portal → your app → Bot → Reset Token |
 | `OWNER_DISCORD_ID` | Your Discord user ID (Developer Mode → right-click yourself) |
 | `GEMINI_API_KEY` | <https://aistudio.google.com/apikey> (free, no card) |
-| `ELEVENLABS_API_KEY` | <https://elevenlabs.io/app/settings/api-keys> |
-| `ELEVENLABS_VOICE_ID` | ElevenLabs → Voices → a **premade** voice → copy ID |
+| `GROQ_API_KEY` | <https://console.groq.com/keys> (also used for chat fallback if configured) |
+| `GROQ_TTS_VOICE` | `autumn` (female, default) · `diana` · `hannah` |
 
 **Optional**
 
-`GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_API_KEY`,
-`AI_BASE_URL`, `DISCORD_GUILD_ID`, `ALLOWED_CHANNEL_IDS`, `FFMPEG_PATH`,
-`OPENAI_TTS_*`, `IMAGE_PROVIDER`/`OPENAI_IMAGE_MODEL`.
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_API_KEY`, `AI_BASE_URL`,
+`AI_MODEL_FALLBACKS`, `DISCORD_GUILD_ID`, `ALLOWED_CHANNEL_IDS`, `FFMPEG_PATH`,
+`GROQ_TTS_MODEL`, `ELEVENLABS_API_KEY`/`ELEVENLABS_VOICE_ID`, `OPENAI_TTS_*`,
+`IMAGE_PROVIDER`/`OPENAI_IMAGE_MODEL`.
+
+If you set `VOICE_MODE=off`, no voice key is required at all.
 
 ## Voice identity and cloning
 
-Leyla's voice is an ElevenLabs **premade** voice (`21m00Tcm4TlvDq8ikWAM`, "Rachel")
-or any voice you own. Do **not** clone a real person's voice or imitate a
-public figure. Generated audio stays private; if you publish it on the free plan,
-ElevenLabs requires attribution ("elevenlabs.io" / "11.ai").
+Leyla speaks with Groq's Orpheus voice `autumn`, a stock voice persona — no cloning
+involved. Do **not** clone a real person's voice or imitate a public figure. If you
+switch to ElevenLabs, they require attribution ("elevenlabs.io" / "11.ai") when you
+publish audio generated on their free plan.
 
 ## Security rules for keys
 

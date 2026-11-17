@@ -47,7 +47,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 AI_PROVIDERS = ("gemini", "groq", "openai", "openrouter", "custom", "echo")
-VOICE_PROVIDERS = ("elevenlabs", "openai", "edge", "none")
+VOICE_PROVIDERS = ("groq", "elevenlabs", "openai", "edge", "none")
 VOICE_MODES = ("off", "request", "occasional", "always")
 IMAGE_PROVIDERS = ("none", "pollinations", "openai")
 
@@ -131,6 +131,8 @@ class Settings:
     # --- AI ----------------------------------------------------------------
     ai_provider: str = "gemini"
     ai_model: str = ""
+    #: Extra model IDs tried when the primary model is overloaded (503) or gone.
+    ai_model_fallbacks: tuple[str, ...] = ()
     ai_api_key: str = ""
     ai_base_url: str = ""
     ai_fallbacks: tuple[str, ...] = ()
@@ -146,15 +148,20 @@ class Settings:
     rate_limit_per_minute: int = 12
 
     # --- Voice -------------------------------------------------------------
-    voice_provider: str = "elevenlabs"
+    voice_provider: str = "groq"
     voice_mode: str = "occasional"
-    voice_frequency: float = 0.2
-    voice_max_chars: int = 700
-    tts_daily_char_limit: int = 2200
-    tts_monthly_char_limit: int = 8500
-    voice_cooldown_minutes: int = 12
+    voice_frequency: float = 0.15
+    voice_max_chars: int = 190
+    tts_daily_char_limit: int = 2000
+    tts_monthly_char_limit: int = 8000
+    voice_cooldown_minutes: int = 20
     nonverbal_enabled: bool = True
     ffmpeg_path: str = ""
+
+    groq_api_key: str = ""
+    groq_tts_model: str = "canopylabs/orpheus-v1-english"
+    groq_tts_voice: str = "autumn"
+    groq_tts_url: str = "https://api.groq.com/openai/v1/audio/speech"
 
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
@@ -215,7 +222,7 @@ class Settings:
         if provider == "custom" and not base_url:
             raise ConfigError("AI_PROVIDER=custom requires AI_BASE_URL")
 
-        voice_provider = get("VOICE_PROVIDER", "elevenlabs").lower()
+        voice_provider = get("VOICE_PROVIDER", "groq").lower()
         if voice_provider not in VOICE_PROVIDERS:
             raise ConfigError(
                 f"VOICE_PROVIDER must be one of {', '.join(VOICE_PROVIDERS)} (got {voice_provider!r})"
@@ -250,6 +257,13 @@ class Settings:
             db_path=db_path,
             ai_provider=provider,
             ai_model=model,
+            ai_model_fallbacks=_csv(
+                env,
+                "AI_MODEL_FALLBACKS",
+                ("gemini-3.5-flash", "gemini-flash-lite-latest")
+                if provider == "gemini"
+                else (),
+            ),
             ai_api_key=api_key,
             ai_base_url=base_url.rstrip("/"),
             ai_fallbacks=tuple(
@@ -267,13 +281,19 @@ class Settings:
             rate_limit_per_minute=_int(env, "RATE_LIMIT_PER_MINUTE", 12, 1, 120),
             voice_provider=voice_provider,
             voice_mode=voice_mode,
-            voice_frequency=_float(env, "VOICE_FREQUENCY", 0.2, 0.0, 1.0),
-            voice_max_chars=_int(env, "VOICE_MAX_CHARS", 700, 80, 2000),
-            tts_daily_char_limit=_int(env, "TTS_DAILY_CHAR_LIMIT", 2200, 0, 100000),
-            tts_monthly_char_limit=_int(env, "TTS_MONTHLY_CHAR_LIMIT", 8500, 0, 1000000),
-            voice_cooldown_minutes=_int(env, "VOICE_COOLDOWN_MINUTES", 12, 0, 1440),
+            voice_frequency=_float(env, "VOICE_FREQUENCY", 0.15, 0.0, 1.0),
+            voice_max_chars=_int(env, "VOICE_MAX_CHARS", 190, 80, 2000),
+            tts_daily_char_limit=_int(env, "TTS_DAILY_CHAR_LIMIT", 2000, 0, 100000),
+            tts_monthly_char_limit=_int(env, "TTS_MONTHLY_CHAR_LIMIT", 8000, 0, 1000000),
+            voice_cooldown_minutes=_int(env, "VOICE_COOLDOWN_MINUTES", 20, 0, 1440),
             nonverbal_enabled=_bool(env, "VOICE_NONVERBAL_ENABLED", True),
             ffmpeg_path=get("FFMPEG_PATH"),
+            groq_api_key=get("GROQ_API_KEY"),
+            groq_tts_model=get("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english"),
+            groq_tts_voice=get("GROQ_TTS_VOICE", "autumn"),
+            groq_tts_url=get(
+                "GROQ_TTS_URL", "https://api.groq.com/openai/v1/audio/speech"
+            ),
             elevenlabs_api_key=get("ELEVENLABS_API_KEY"),
             elevenlabs_voice_id=get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             elevenlabs_model=get("ELEVENLABS_MODEL", "eleven_v4"),
@@ -307,6 +327,10 @@ class Settings:
         # OpenAI key when both features use OpenAI.
         if settings.voice_provider == "openai" and not settings.openai_api_key:
             settings.openai_api_key = get("OPENAI_API_KEY") or settings.ai_api_key
+        # The Groq key doubles as the TTS key; AI_API_KEY alone is not enough
+        # because it might belong to a different vendor.
+        if settings.voice_provider == "groq" and not settings.groq_api_key:
+            settings.groq_api_key = settings.ai_api_key if provider == "groq" else ""
 
         settings.load_warnings = warnings
         return settings
@@ -335,6 +359,8 @@ class Settings:
         return ""
 
     def tts_api_key(self) -> str:
+        if self.voice_provider == "groq":
+            return self.groq_api_key
         if self.voice_provider == "elevenlabs":
             return self.elevenlabs_api_key
         if self.voice_provider == "openai":
@@ -370,6 +396,12 @@ class Settings:
                 )
             if not self.elevenlabs_voice_id:
                 problems.append("ELEVENLABS_VOICE_ID is required when VOICE_PROVIDER=elevenlabs")
+        if self.voice_mode != "off" and self.voice_provider == "groq":
+            if not self.groq_api_key:
+                problems.append(
+                    "GROQ_API_KEY is required when VOICE_PROVIDER=groq "
+                    "(set VOICE_MODE=off to run text-only)"
+                )
         if self.voice_mode != "off" and self.voice_provider == "openai":
             if not (self.openai_api_key or self.ai_api_key):
                 problems.append("OPENAI_API_KEY is required when VOICE_PROVIDER=openai")
@@ -392,6 +424,10 @@ class Settings:
         if self.voice_mode == "always":
             notes.append(
                 "VOICE_MODE=always sends a voice note for every reply and can burn your TTS credits quickly"
+            )
+        if self.voice_provider == "groq" and self.voice_mode != "off":
+            notes.append(
+                "voice notes use Groq Orpheus (wav → ffmpeg → Ogg/Opus, 200 character input cap)"
             )
         if self.voice_provider == "elevenlabs" and self.voice_mode != "off":
             if self.elevenlabs_model in {"eleven_v3", "eleven_v4"}:

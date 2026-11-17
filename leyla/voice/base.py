@@ -25,6 +25,11 @@ class VoiceProvider(ABC):
 
     name: str = "unknown"
     supports_audio_tags: bool = False
+    #: How bracketed cues must be written for this engine. ``elevenlabs`` takes
+    #: the canonical ``[laughs]`` form; ``orpheus`` uses ``<laugh>`` tokens.
+    tag_style: str = "elevenlabs"
+    #: Hard input cap in characters, 0 for "use the configured limit".
+    max_input_chars: int = 0
     #: Set when the provider can be used without an API key.
     free: bool = False
 
@@ -41,6 +46,7 @@ class NullVoiceProvider(VoiceProvider):
 
     name = "none"
     supports_audio_tags = False
+    max_input_chars = 0
 
     async def synthesize(self, text: str, *, delivery: str = "") -> SpeechAudio:
         from ..errors import VoiceError

@@ -32,6 +32,7 @@ def build_provider(name: str, settings: Settings) -> ChatProvider:
             base_url=settings.ai_base_url or PROVIDER_BASE_URLS["gemini"],
             timeout=settings.ai_timeout_seconds,
             max_retries=settings.ai_max_retries,
+            fallback_models=settings.ai_model_fallbacks,
         )
 
     if name in {"groq", "openai", "openrouter", "custom"}:

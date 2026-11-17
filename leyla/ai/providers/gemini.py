@@ -27,11 +27,13 @@ class GeminiProvider(ChatProvider):
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 45.0,
         max_retries: int = 2,
+        fallback_models: tuple[str, ...] = (),
     ) -> None:
         if not api_key:
             raise ProviderError("Gemini API key missing", provider=self.name)
         self.api_key = api_key
         self.model = model or "gemini-flash-latest"
+        self.fallback_models = tuple(m for m in fallback_models if m != self.model)
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.http = HttpJsonClient(self.name, max_retries=max_retries, timeout=timeout)
 
@@ -57,17 +59,34 @@ class GeminiProvider(ChatProvider):
         if request.json_mode:
             payload["generationConfig"]["responseMimeType"] = "application/json"
 
-        url = f"{self.base_url}/models/{self.model}:generateContent"
-        data, _ = await self.http.request(
-            "POST",
-            url,
-            headers={
-                "x-goog-api-key": self.api_key,
-                "Content-Type": "application/json",
-            },
-            json_body=payload,
-            timeout=request.timeout,
-        )
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        # Free Flash models regularly answer 503 "high demand". A second model
+        # ID is a better use of the turn than retrying the busy one.
+        last_error: ProviderError | None = None
+        for model in (self.model, *self.fallback_models):
+            url = f"{self.base_url}/models/{model}:generateContent"
+            try:
+                data, _ = await self.http.request(
+                    "POST",
+                    url,
+                    headers=headers,
+                    json_body=payload,
+                    timeout=request.timeout,
+                )
+                self.model = model
+                break
+            except ProviderError as exc:
+                last_error = exc
+                # A busy, retired or unreachable model should hand the turn to
+                # the next model ID instead of failing the conversation.
+                if exc.status in {404, 429, 503} or exc.retryable:
+                    continue
+                raise
+        else:
+            raise last_error or ProviderError("Gemini unavailable", provider=self.name)
 
         blocked = (data.get("promptFeedback") or {}).get("blockReason")
         if blocked:

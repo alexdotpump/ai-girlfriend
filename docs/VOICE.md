@@ -3,28 +3,32 @@
 Leyla sends **real Discord voice messages** — Ogg/Opus files with a waveform that
 play inline in the client, not links or fake attachments.
 
-## Why ElevenLabs v3/v4
+## Why Groq Orpheus (`canopylabs/orpheus-v1-english`)
 
-Ordinary TTS cannot produce believable breathing, giggles or "laughing while
-finishing the sentence". That is a performance, not a waveform effect.
+Ordinary TTS cannot produce believable breathing or real laughter. That is a
+performance, not a waveform effect.
 
-ElevenLabs v3/v4 accept **audio tags** in the text and render them as nonverbal
-vocalisations inside a single take, with the same voice identity:
+Orpheus renders Canopy Labs' nonverbal **tokens** as actual vocalisations inside
+the same take, with the same voice identity — and it never reads the token out
+loud. Verified against the live API: the transcript of
+`<laugh> Wait, you actually did that?` is just the sentence, while the audio is
+1.5–2 s longer than the same line without the token. `<sigh>` behaves the same way.
 
 ```
-[laughs] you actually fell for that?
-[sighs] fine. I'll explain it again.
-[exhales] okay. that's the whole story.
+<laugh> you actually fell for that?
+<sigh> fine. I'll explain it again.
+<chuckle> you are impossible, you know that?
 ```
 
-Verified supported cues: `[laughs]`, `[laughs harder]`, `[starts laughing]`,
-`[sighs]`, `[exhales]`, `[whispers]`, `[clears throat]`, `[snorts]`,
-`[nervous laugh]`, `[excited]`, `[curious]`, `[sarcastic]`, `[mischievously]`.
+Cues used: `<laugh>`, `<chuckle>`, `<sigh>`. Voice: `autumn` (female), with
+`diana`/`hannah` as alternates. Leyla never says the word "giggle" — in text or
+audio; a laugh is a laugh.
 
 Why not the alternatives (checked in November 2026):
 
 | Option | Why it is not the default |
 | --- | --- |
+| ElevenLabs v3/v4 | Also expressive (`[laughs]`, `[sighs]`), still supported as `VOICE_PROVIDER=elevenlabs`, but a 10k-character free plan is smaller than Orpheus' pricing and needs another key |
 | OpenAI TTS | Natural voice, but only natural-language delivery instructions — no laughter or breaths |
 | edge-tts | Free and decent, but SSML-ish prosody only; no nonverbal sounds |
 | Google/Azure SSML | Supports pauses and style, not realistic laughter/breathing |
@@ -53,22 +57,22 @@ speech — it never reads "[laughs]" aloud.
    cue**, each with its own cooldown (laughter 25–60 minutes, sighs 40 minutes,
    breaths 15 minutes). Expression is deliberately occasional.
 
-Mood → expression examples:
+Mood → expression examples (canonical names; Orpheus renders them as
+`<laugh>`, `<chuckle>`, `<sigh>`):
 
 | Mood | Cues |
 | --- | --- |
 | playful / excited | `[laughs]`, `[starts laughing]`, `[mischievously]`, `[excited]` |
 | happy | `[laughs]` |
 | relaxed / sleepy | `[exhales]`, `[sighs]`, `[whispers]` |
-| shy | `[nervous laugh]` |
-| sarcastic | `[sarcastic]` |
+| shy | `[nervous laugh]` → `<chuckle>` |
 | serious | none — no bits during a serious conversation |
 | annoyed / disappointed | `[sighs]` |
 
 ## Audio pipeline
 
 ```
-provider audio (mp3)
+provider audio (wav from Orpheus, mp3 from the others)
    → ffmpeg: loudnorm → libopus 64 kbps → 48 kHz stereo → Ogg
    → duration from the last Ogg granule position − Opus pre-skip (no ffprobe)
    → waveform: decode 8 kHz mono PCM → 128 RMS bars → base64
@@ -78,54 +82,51 @@ provider audio (mp3)
 
 Fallbacks:
 
-- ffmpeg missing → the MP3 is sent as a normal playable attachment and the reason
-  is logged. No broken voice note is ever sent.
+- ffmpeg missing → the WAV/MP3 is sent as a normal playable attachment and the
+  reason is logged. No broken voice note is ever sent.
 - TTS failure → text reply still delivered.
 - Upload failure → logged; no message pretending a voice note exists.
 
 ## Budgets
 
-`TTS_DAILY_CHAR_LIMIT=2200`, `TTS_MONTHLY_CHAR_LIMIT=8500` by default — chosen to
-stay inside ElevenLabs' free 10k characters/month. Notes are cached by text hash
-so replays and tests do not spend credits. `/voice status` shows usage.
+`TTS_DAILY_CHAR_LIMIT=2000`, `TTS_MONTHLY_CHAR_LIMIT=8000` by default. Orpheus is
+priced per character ($22 / 1M characters ≈ $0.004 for a 190-character note), so
+those budgets cap spend at a few cents a month while still allowing several notes
+a week. Notes are cached by text hash, so replays and tests cost nothing.
+`/voice status` shows usage.
 
-At ~300 characters per note, the free plan supports roughly **one short note a
-day**, or five a week with longer notes. Raise the limits only with a paid plan.
+Because the API caps input at 200 characters, `VOICE_MAX_CHARS=190` and every note
+is trimmed on a sentence boundary before the call.
 
 ## How to audition it
 
 ```
 /voice test
-/voice test okay, this is the laughing one. [laughs] see, that was supposed to sound natural.
+/voice test okay this is the laughing one, wait — [that one is automatic, not typed]
 ```
 
-Listen for: is the laughter placed before a thought (natural) rather than mid-word;
-does the breath land between sentences; does the voice identity match every note.
-If laughter fires too often, lower `VOICE_FREQUENCY`, raise
-`VOICE_COOLDOWN_MINUTES`, or set `VOICE_NONVERBAL_ENABLED=false`.
+Just use `/voice test` and talk to her normally; the cues are chosen by mood, not
+by you. Listen for: does the laugh land before the thought (natural) rather than
+mid-word; does the sigh sit on a sentence break; does the voice sound like the same
+person every time.
 
-Tuning knobs: `ELEVENLABS_STABILITY` (lower = more expressive, default 0.45),
-`ELEVENLABS_STYLE` (0.35), `ELEVENLABS_SIMILARITY` (0.8),
-`ELEVENLABS_SPEAKER_BOOST=true`, and `ELEVENLABS_MODEL` (`eleven_v4` default,
-falling back to `eleven_v3` then `eleven_multilingual_v2` if your plan rejects it).
+If laughter fires too often, lower `VOICE_FREQUENCY`, raise
+`VOICE_COOLDOWN_MINUTES`, or set `VOICE_NONVERBAL_ENABLED=false`. If you want a
+different voice, set `GROQ_TTS_VOICE` to `autumn`, `diana` or `hannah`.
 
 ## Tested vs. not tested
 
-Tested in this build:
+Tested live on 17 November 2026:
 
-- real speech synthesis through the free `edge-tts` provider (42 KB MP3)
-- ffmpeg conversion to a **7.2 s Ogg/Opus** file with `OpusHead`, correct duration
-  and a 128-bar waveform
-- the exact three-step Discord upload payload (against a fake HTTP layer)
-- all gating/cleaning/tag logic, cooldowns, budgets and fallbacks
+- Groq Orpheus synthesis with `<laugh>`/`<sigh>`: the token is performed, not read
+- a real Discord voice message: 9.4 s, 62.5 KB, `audio/ogg`, waveform, `flags: 8192`
+- the occasional-voice policy firing on its own inside a real chat turn
+- the exact three-step upload against the live Discord API
+- ffmpeg conversion, duration from the Ogg granule position, 128-bar waveform
+- all gating/cleaning/cue logic, cooldowns, budgets and fallbacks
 
-Not tested, because it needs credentials/accounts this build did not have:
-
-- ElevenLabs tag rendering and subjective naturalness
-- an actual Discord upload and playback on your account
-
-After deploying, run `/voice test` and listen. That is the only honest way to
-confirm the voice is good enough for you.
+Not tested: whether *you* like the voice. Play the note in Discord and decide —
+that is the only honest test of naturalness.
 
 ## Adding another provider
 
@@ -135,6 +136,8 @@ Implement `leyla.voice.base.VoiceProvider`:
 class MyVoice(VoiceProvider):
     name = "myvoice"
     supports_audio_tags = False
+    tag_style = "elevenlabs"   # or "orpheus" for <laugh>/<sigh> tokens
+    max_input_chars = 0        # e.g. 200 for Orpheus-style APIs
     async def synthesize(self, text: str, *, delivery: str = "") -> SpeechAudio: ...
 ```
 

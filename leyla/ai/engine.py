@@ -32,6 +32,13 @@ _CODE_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 _LEADING_NAME = re.compile(r"^\s*(leyla|assistant|bot)\s*[:\-]\s*", re.IGNORECASE)
 _MULTI_NEWLINE = re.compile(r"\n{3,}")
 _MARKDOWN = re.compile(r"(\*\*|__|~~|`{1,2})")
+_GIGGLE = re.compile(r"\b(giggle|giggles|giggling|giggled)\b", re.IGNORECASE)
+_GIGGLE_WORDS = {
+    "giggle": "laugh",
+    "giggles": "laughs",
+    "giggling": "laughing",
+    "giggled": "laughed",
+}
 
 
 @dataclass(slots=True)
@@ -127,6 +134,9 @@ def clean_reply(text: str) -> str:
     reply = _LEADING_NAME.sub("", reply).strip()
     if reply.startswith('"') and reply.endswith('"') and len(reply) > 2:
         reply = reply[1:-1].strip()
+    # She laughs, she does not giggle — and a model that slips gets corrected
+    # rather than shipped to the chat.
+    reply = _GIGGLE.sub(lambda m: _GIGGLE_WORDS[m.group(0).lower()], reply)
     reply = _MULTI_NEWLINE.sub("\n\n", reply)
     return reply.strip()
 
@@ -177,14 +187,19 @@ class ConversationEngine:
         history = await self.conversations.recent(
             scope_id, limit=max(4, self.settings.chat_history_turns * 2)
         )
-        relevant = await self.memories.search(scope_id, user_text, limit=6)
+        recent_topics = await self.conversations.recent_topics(scope_id, limit=3)
+        # Recall against the current message *and* the live thread, so "what
+        # about Thursday?" still finds a fact mentioned two messages ago.
+        relevant = await self.memories.search(
+            scope_id, user_text, limit=6, context=" \n".join(recent_topics)
+        )
         system_prompt = build_system_prompt(
             mood=mood_state,
             memories=relevant,
             display_name=display_name,
             local_time=local_time or _local_time_hint(),
             voice_enabled=voice_enabled,
-            recent_topics=await self.conversations.recent_topics(scope_id, limit=3),
+            recent_topics=recent_topics,
         )
 
         messages = [ChatMessage("system", system_prompt)]
