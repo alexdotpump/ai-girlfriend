@@ -68,10 +68,16 @@ def _int(env: Mapping[str, str], key: str, default: int, lo: int | None = None, 
     raw = env.get(key)
     if raw is None or raw.strip() == "":
         return default
+    text = raw.strip()
     try:
-        value = int(float(raw.strip()))
-    except ValueError as exc:
-        raise ConfigError(f"{key} must be an integer, got {raw!r}") from exc
+        # Parse as int first: Discord snowflakes are 19 digits and would lose
+        # their last digits if they went through a float.
+        value = int(text)
+    except ValueError:
+        try:
+            value = int(float(text))
+        except ValueError as exc:
+            raise ConfigError(f"{key} must be an integer, got {raw!r}") from exc
     if lo is not None and value < lo:
         raise ConfigError(f"{key} must be >= {lo}, got {value}")
     if hi is not None and value > hi:
@@ -249,7 +255,13 @@ class Settings:
 
         settings = cls(
             discord_token=get("DISCORD_TOKEN"),
-            owner_ids=_int_set(env, "OWNER_DISCORD_ID") | _int_set(env, "OWNER_DISCORD_IDS"),
+            # GUILD_OWNER_ID is accepted as an alias: some hosting dashboards use
+            # that name for the same person's Discord user ID.
+            owner_ids=(
+                _int_set(env, "OWNER_DISCORD_ID")
+                | _int_set(env, "OWNER_DISCORD_IDS")
+                | _int_set(env, "GUILD_OWNER_ID")
+            ),
             guild_id=_int(env, "DISCORD_GUILD_ID", 0) or None,
             allowed_channel_ids=_int_set(env, "ALLOWED_CHANNEL_IDS"),
             bot_name=get("BOT_NAME", "Leyla"),

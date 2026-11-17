@@ -110,6 +110,19 @@ def test_discord_ids_parse_from_env_sets():
     assert settings.allowed_channel_ids == frozenset({10, 11})
 
 
+def test_snowflake_ids_keep_every_digit():
+    """19-digit Discord IDs must not round-trip through a float."""
+    guild_id = "1571928323427405834"
+    settings = Settings.load({**BASE, "DISCORD_GUILD_ID": guild_id})
+    assert settings.guild_id == 1571928323427405834
+    assert str(settings.guild_id) == guild_id
+
+
+def test_guild_owner_id_is_accepted_as_an_owner_alias():
+    settings = Settings.load({**BASE, "OWNER_DISCORD_ID": "", "GUILD_OWNER_ID": "1549940496607088670"})
+    assert settings.owner_ids == frozenset({1549940496607088670})
+
+
 def test_warnings_mention_global_sync_and_image_state():
     settings = Settings.load({**BASE, "DISCORD_GUILD_ID": "", "AI_PROVIDER": "echo"})
     warnings = " ".join(settings.warnings())
